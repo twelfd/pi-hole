@@ -68,7 +68,10 @@ SetDNSServers(){
 	# Replace within actual dnsmasq config file
 	sed -i '/server=/d;' /etc/dnsmasq.d/01-pihole.conf
 	echo "server=${args[2]}" >> /etc/dnsmasq.d/01-pihole.conf
-	echo "server=${args[3]}" >> /etc/dnsmasq.d/01-pihole.conf
+	# Add second DNS server only if specified
+	if (( ${#args[3]} > 0 )) ; then
+		echo "server=${args[3]}" >> /etc/dnsmasq.d/01-pihole.conf
+	fi
 
 	# Restart dnsmasq to load new configuration
 	RestartDNS
