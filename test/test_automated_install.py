@@ -78,7 +78,7 @@ def test_configureFirewall_firewalld_running_no_errors(Pihole):
     assert expected_stdout in configureFirewall.stdout
     firewall_calls = Pihole.run('cat /var/log/firewall-cmd').stdout
     assert 'firewall-cmd --state' in firewall_calls
-    assert 'firewall-cmd --permanent --add-port=80/tcp --add-port=53/tcp --add-port=53/udp' in firewall_calls
+    assert 'firewall-cmd --permanent --add-service=http --add-service=dns' in firewall_calls
     assert 'firewall-cmd --reload' in firewall_calls
 
 def test_configureFirewall_firewalld_disabled_no_errors(Pihole):
@@ -297,6 +297,166 @@ def test_update_package_cache_failure_no_errors(Pihole):
     assert 'ERROR' in updateCache.stdout
     assert 'done!' not in updateCache.stdout
 
+def test_FTL_detect_aarch64_no_errors(Pihole):
+    ''' confirms only aarch64 package is downloaded for FTL engine '''
+    # mock uname to return aarch64 platform
+    mock_command('uname', {'-m':('aarch64', '0')}, Pihole)
+    # mock ldd to respond with aarch64 shared library
+    mock_command('ldd', {'/bin/ls':('/lib/ld-linux-aarch64.so.1', '0')}, Pihole)
+    detectPlatform = Pihole.run('''
+    source /opt/pihole/basic-install.sh
+    FTLdetect
+    ''')
+    expected_stdout = 'Detected ARM-aarch64 architecture'
+    assert expected_stdout in detectPlatform.stdout
+
+def test_FTL_detect_armv6l_no_errors(Pihole):
+    ''' confirms only armv6l package is downloaded for FTL engine '''
+    # mock uname to return armv6l platform
+    mock_command('uname', {'-m':('armv6l', '0')}, Pihole)
+    # mock ldd to respond with aarch64 shared library
+    mock_command('ldd', {'/bin/ls':('/lib/ld-linux-armhf.so.3', '0')}, Pihole)
+    detectPlatform = Pihole.run('''
+    source /opt/pihole/basic-install.sh
+    FTLdetect
+    ''')
+    expected_stdout = 'Detected ARM-hf architecture (armv6 or lower)'
+    assert expected_stdout in detectPlatform.stdout
+
+def test_FTL_detect_armv7l_no_errors(Pihole):
+    ''' confirms only armv7l package is downloaded for FTL engine '''
+    # mock uname to return armv7l platform
+    mock_command('uname', {'-m':('armv7l', '0')}, Pihole)
+    # mock ldd to respond with aarch64 shared library
+    mock_command('ldd', {'/bin/ls':('/lib/ld-linux-armhf.so.3', '0')}, Pihole)
+    detectPlatform = Pihole.run('''
+    source /opt/pihole/basic-install.sh
+    FTLdetect
+    ''')
+    expected_stdout = 'Detected ARM-hf architecture (armv7+)'
+    assert expected_stdout in detectPlatform.stdout
+
+def test_FTL_detect_x86_64_no_errors(Pihole):
+    ''' confirms only x86_64 package is downloaded for FTL engine '''
+    detectPlatform = Pihole.run('''
+    source /opt/pihole/basic-install.sh
+    FTLdetect
+    ''')
+    expected_stdout = 'Detected x86_64 architecture'
+    assert expected_stdout in detectPlatform.stdout
+
+def test_FTL_detect_unknown_no_errors(Pihole):
+    ''' confirms only generic package is downloaded for FTL engine '''
+    # mock uname to return generic platform
+    mock_command('uname', {'-m':('mips', '0')}, Pihole)
+    detectPlatform = Pihole.run('''
+    source /opt/pihole/basic-install.sh
+    FTLdetect
+    ''')
+    expected_stdout = 'Not able to detect architecture (unknown: mips)'
+    assert expected_stdout in detectPlatform.stdout
+
+def test_FTL_download_aarch64_no_errors(Pihole):
+    ''' confirms only aarch64 package is downloaded for FTL engine '''
+    # mock uname to return generic platform
+    download_binary = Pihole.run('''
+    source /opt/pihole/basic-install.sh
+    FTLinstall pihole-FTL-aarch64-linux-gnu
+    ''')
+    expected_stdout = 'done'
+    assert expected_stdout in download_binary.stdout
+    assert 'failed' not in download_binary.stdout
+
+def test_FTL_download_unknown_fails_no_errors(Pihole):
+    ''' confirms unknown binary is not downloaded for FTL engine '''
+    # mock uname to return generic platform
+    download_binary = Pihole.run('''
+    source /opt/pihole/basic-install.sh
+    FTLinstall pihole-FTL-mips
+    ''')
+    expected_stdout = 'failed'
+    assert expected_stdout in download_binary.stdout
+    assert 'done' not in download_binary.stdout
+
+def test_FTL_binary_installed_and_responsive_no_errors(Pihole):
+    ''' confirms FTL binary is copied and functional in installed location '''
+    installed_binary = Pihole.run('''
+    source /opt/pihole/basic-install.sh
+    FTLdetect
+    pihole-FTL version
+    ''')
+    expected_stdout = 'v'
+    assert expected_stdout in installed_binary.stdout
+
+# def test_FTL_support_files_installed(Pihole):
+#     ''' confirms FTL support files are installed '''
+#     support_files = Pihole.run('''
+#     source /opt/pihole/basic-install.sh
+#     FTLdetect
+#     stat -c '%a %n' /var/log/pihole-FTL.log
+#     stat -c '%a %n' /run/pihole-FTL.port
+#     stat -c '%a %n' /run/pihole-FTL.pid
+#     ls -lac /run
+#     ''')
+#     assert '644 /run/pihole-FTL.port' in support_files.stdout
+#     assert '644 /run/pihole-FTL.pid' in support_files.stdout
+#     assert '644 /var/log/pihole-FTL.log' in support_files.stdout
+
+def test_IPv6_only_link_local(Pihole):
+    ''' confirms IPv6 blocking is disabled for Link-local address '''
+    # mock ip -6 address to return Link-local address
+    mock_command_2('ip', {'-6 address':('inet6 fe80::d210:52fa:fe00:7ad7/64 scope link', '0')}, Pihole)
+    detectPlatform = Pihole.run('''
+    source /opt/pihole/basic-install.sh
+    useIPv6dialog
+    ''')
+    expected_stdout = 'Found neither IPv6 ULA nor GUA address, blocking IPv6 ads will not be enabled'
+    assert expected_stdout in detectPlatform.stdout
+
+def test_IPv6_only_ULA(Pihole):
+    ''' confirms IPv6 blocking is enabled for ULA addresses '''
+    # mock ip -6 address to return ULA address
+    mock_command_2('ip', {'-6 address':('inet6 fda2:2001:5555:0:d210:52fa:fe00:7ad7/64 scope global', '0')}, Pihole)
+    detectPlatform = Pihole.run('''
+    source /opt/pihole/basic-install.sh
+    useIPv6dialog
+    ''')
+    expected_stdout = 'Found IPv6 ULA address, using it for blocking IPv6 ads'
+    assert expected_stdout in detectPlatform.stdout
+
+def test_IPv6_only_GUA(Pihole):
+    ''' confirms IPv6 blocking is enabled for GUA addresses '''
+    # mock ip -6 address to return GUA address
+    mock_command_2('ip', {'-6 address':('inet6 2003:12:1e43:301:d210:52fa:fe00:7ad7/64 scope global', '0')}, Pihole)
+    detectPlatform = Pihole.run('''
+    source /opt/pihole/basic-install.sh
+    useIPv6dialog
+    ''')
+    expected_stdout = 'Found IPv6 GUA address, using it for blocking IPv6 ads'
+    assert expected_stdout in detectPlatform.stdout
+
+def test_IPv6_GUA_ULA_test(Pihole):
+    ''' confirms IPv6 blocking is enabled for GUA and ULA addresses '''
+    # mock ip -6 address to return GUA and ULA addresses
+    mock_command_2('ip', {'-6 address':('inet6 2003:12:1e43:301:d210:52fa:fe00:7ad7/64 scope global\ninet6 fda2:2001:5555:0:d210:52fa:fe00:7ad7/64 scope global', '0')}, Pihole)
+    detectPlatform = Pihole.run('''
+    source /opt/pihole/basic-install.sh
+    useIPv6dialog
+    ''')
+    expected_stdout = 'Found IPv6 ULA address, using it for blocking IPv6 ads'
+    assert expected_stdout in detectPlatform.stdout
+
+def test_IPv6_ULA_GUA_test(Pihole):
+    ''' confirms IPv6 blocking is enabled for GUA and ULA addresses '''
+    # mock ip -6 address to return ULA and GUA addresses
+    mock_command_2('ip', {'-6 address':('inet6 fda2:2001:5555:0:d210:52fa:fe00:7ad7/64 scope global\ninet6 2003:12:1e43:301:d210:52fa:fe00:7ad7/64 scope global', '0')}, Pihole)
+    detectPlatform = Pihole.run('''
+    source /opt/pihole/basic-install.sh
+    useIPv6dialog
+    ''')
+    expected_stdout = 'Found IPv6 ULA address, using it for blocking IPv6 ads'
+    assert expected_stdout in detectPlatform.stdout
+
 # Helper functions
 def mock_command(script, args, container):
     ''' Allows for setup of commands we don't really want to have to run for real in unit tests '''
@@ -309,6 +469,27 @@ def mock_command(script, args, container):
         case = dedent('''
         {arg})
         echo {res}
+        exit {retcode}
+        ;;'''.format(arg=k, res=v[0], retcode=v[1]))
+        mock_script += case
+    mock_script += dedent('''
+    esac''')
+    container.run('''
+    cat <<EOF> {script}\n{content}\nEOF
+    chmod +x {script}
+    rm -f /var/log/{scriptlog}'''.format(script=full_script_path, content=mock_script, scriptlog=script))
+
+def mock_command_2(script, args, container):
+    ''' Allows for setup of commands we don't really want to have to run for real in unit tests '''
+    full_script_path = '/usr/local/bin/{}'.format(script)
+    mock_script = dedent('''\
+    #!/bin/bash -e
+    echo "\$0 \$@" >> /var/log/{script}
+    case "\$1 \$2" in'''.format(script=script))
+    for k, v in args.iteritems():
+        case = dedent('''
+        \"{arg}\")
+        echo \"{res}\"
         exit {retcode}
         ;;'''.format(arg=k, res=v[0], retcode=v[1]))
         mock_script += case
